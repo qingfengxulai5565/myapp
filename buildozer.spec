@@ -18,3 +18,6 @@ api = 31
 minapi = 21
 android.accept_sdk_license = true
 android.permissions = INTERNET
+
+# 自动接受Android SDK许可证
+android.accept_sdk_license = true
