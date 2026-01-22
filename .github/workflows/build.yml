@@ -23,65 +23,129 @@ jobs:
           python3-venv \
           build-essential \
           libffi-dev \
-          libssl-dev
+          libssl-dev \
+          wget \
+          unzip \
+          openjdk-17-jdk
     
-    # 步骤3: 安装Buildozer
+    # 步骤3: 设置Java环境
+    - name: 设置Java环境
+      run: |
+        echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+    
+    # 步骤4: 安装Buildozer
     - name: 安装Buildozer
       run: |
         pip install --upgrade pip
-        pip install buildozer
+        pip install buildozer==1.5.0
         pip install cython==0.29.33
     
-    # 步骤4: 接受Android许可证（关键步骤）
-    - name: 接受Android许可证
+    # 步骤5: 确保有完整的许可证文件
+    - name: 设置Android许可证
       run: |
         mkdir -p ~/.android
-        touch ~/.android/android-sdk-license
-        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
-    
-    # 步骤5: 显示当前目录文件
-    - name: 显示文件结构
-      run: |
-        echo "当前目录文件:"
-        ls -la
-        echo "buildozer.spec内容:"
-        cat buildozer.spec || echo "无法读取buildozer.spec"
-    
-    # 步骤6: 构建APK
-    - name: 构建APK
-      timeout-minutes: 45
-      run: |
-        echo "开始构建APK..."
+        # 创建一个包含所有已知许可证的文件
+        cat > ~/.android/android-sdk-license << 'LICENSE'
+8933bad161af4178b1185d1a37fbf41ea5269c55
+d56f5187479451eabf01fb78af6dfcb131a6481e
+24333f8a63b6825ea9c5514f83c2829b004d1fee
+84831b9409646a918e30573b4d6a4b9d8b517c4a
+33b6a2b64607f17b47f689b6b6b184c620b6f6ea
+3df7ad5d9af5c8c6a24f2643b80b9a72e5d3e0a5
+3a3749c27ac133ef1db6b3b5f5d8e7e8f3c9e0a1
+601085b94cd77f0b54ff86406957099ebe79c4d7
+84831b9409646a918e30573b4d6a4b9d8b517c4a
+d975f751698a77b662f1254ddbeed3901e976f5a
+LICENSE
         
-        # 检查buildozer.spec是否存在
+        # 显示许可证文件
+        echo "Android许可证文件内容:"
+        cat ~/.android/android-sdk-license
+    
+    # 步骤6: 初始化Buildozer并修改配置
+    - name: 初始化Buildozer
+      run: |
         if [ ! -f buildozer.spec ]; then
-          echo "创建buildozer.spec..."
           buildozer init
         fi
         
+        # 确保buildozer.spec包含正确的设置
+        echo "修改buildozer.spec配置..."
+        if ! grep -q "android.accept_sdk_license" buildozer.spec; then
+          echo -e "\nandroid.accept_sdk_license = true" >> buildozer.spec
+        fi
+        
+        # 强制设置接受许可证
+        sed -i 's/android.accept_sdk_license = .*/android.accept_sdk_license = true/g' buildozer.spec 2>/dev/null || true
+        sed -i 's/android.accept_sdk_license = false/android.accept_sdk_license = true/g' buildozer.spec 2>/dev/null || true
+        
+        # 显示修改后的配置
+        echo "buildozer.spec内容:"
+        grep -A5 -B5 "accept_sdk_license" buildozer.spec || echo "没有找到相关设置"
+    
+    # 步骤7: 手动接受Android SDK许可证
+    - name: 手动接受SDK许可证
+      run: |
+        echo "手动接受Android SDK许可证..."
+        # 创建一个自动回答"y"的脚本
+        yes | sdkmanager --licenses 2>/dev/null || true
+        
+        # 尝试直接下载并安装build-tools
+        mkdir -p ~/.android
+        echo "尝试手动安装build-tools..."
+        
+        # 设置ANDROID_HOME环境变量
+        export ANDROID_HOME="$HOME/.buildozer/android/platform/android-sdk"
+        mkdir -p $ANDROID_HOME/licenses
+        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
+        
+        echo "许可证设置完成"
+    
+    # 步骤8: 构建APK
+    - name: 构建APK
+      timeout-minutes: 60
+      run: |
+        echo "开始构建APK..."
+        echo "当前工作目录: $(pwd)"
+        echo "文件列表:"
+        ls -la
+        
+        # 显示buildozer版本
+        buildozer --version
+        
+        # 显示Android SDK配置
+        echo "检查Android SDK..."
+        if [ -d "$HOME/.buildozer/android/platform/android-sdk" ]; then
+          echo "Android SDK目录存在"
+          ls -la $HOME/.buildozer/android/platform/android-sdk/licenses/ 2>/dev/null || echo "没有许可证目录"
+        fi
+        
         # 开始构建
-        buildozer -v android debug
+        echo "运行 buildozer android debug..."
+        buildozer -v android debug 2>&1 | tail -100
         
         # 检查是否生成APK
         if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "✅ APK构建成功！"
           echo "APK文件:"
           ls -la bin/*.apk
+          echo "APK大小: $(du -h bin/*.apk | cut -f1)"
         else
           echo "❌ APK构建失败"
-          echo "检查日志..."
-          find .buildozer -name "*.log" -type f | head -3 | while read log; do
+          echo "尝试查看错误日志..."
+          find .buildozer -name "*.log" -type f 2>/dev/null | head -5 | while read log; do
             echo "=== 日志文件: $log ==="
-            tail -50 "$log"
+            tail -100 "$log" 2>/dev/null || echo "无法读取日志"
           done
           exit 1
         fi
     
-    # 步骤7: 上传APK文件
+    # 步骤9: 上传APK文件
     - name: 上传APK文件
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: 我的APP安装包
         path: bin/*.apk
+        retention-days: 7

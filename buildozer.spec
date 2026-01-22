@@ -18,3 +18,6 @@ api = 31
 minapi = 21
 android.accept_sdk_license = true
 android.permissions = INTERNET
+
+# 指定使用较旧的build-tools版本，避免许可证问题
+android.build_tools_version = 33.0.0
