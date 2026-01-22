@@ -12,53 +12,31 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
     
-    - name: 使用预配置的Buildozer Docker镜像
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: 安装Buildozer
       run: |
-        # 方法1：尝试使用Docker镜像
-        docker run --rm \
-          -v $(pwd):/src \
-          -v buildozer_home:/home/user/.buildozer \
-          -v android_sdk:/home/user/.android \
-          kivy/buildozer android debug 2>&1 || echo "Docker构建失败，尝试本地构建"
-        
-        # 方法2：如果Docker失败，尝试本地构建
-        if [ ! -f bin/*.apk ]; then
-          echo "开始本地构建..."
-          
-          # 安装必要依赖
-          sudo apt-get update
-          sudo apt-get install -y \
-            python3-pip \
-            python3-venv \
-            build-essential \
-            libffi-dev \
-            libssl-dev \
-            openjdk-17-jdk \
-            wget \
-            unzip
-          
-          # 安装buildozer
-          pip install buildozer cython
-          
-          # 创建许可证文件
-          mkdir -p ~/.android
-          echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
-          
-          # 构建
-          buildozer android debug
-        fi
-        
-        # 检查是否生成APK
-        if ls bin/*.apk 1> /dev/null 2>&1; then
-          echo "✅ APK构建成功！"
-        else
-          echo "❌ APK构建失败"
-          exit 1
-        fi
+        pip install buildozer cython
+    
+    - name: 设置Android SDK许可证
+      run: |
+        mkdir -p ~/.android
+        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
+    
+    - name: 使用Buildozer Docker辅助
+      uses: mrokez/buildozer-action@v1.0.0
+      with:
+        buildozer-version: '1.5.0'
+        command: 'android debug'
+        extra-args: ''
     
     - name: 上传APK
-      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: app-apk
+        name: android-app
         path: bin/*.apk
