@@ -1,4 +1,4 @@
-name: 构建Android APK
+name: 手动构建Android APK
 
 on:
   push:
@@ -9,17 +9,150 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: 检出代码
+      uses: actions/checkout@v4
     
-    - name: 使用预配置的构建脚本
+    - name: 安装基础工具
       run: |
-        # 下载一个已经配置好的构建脚本
-        curl -s https://raw.githubusercontent.com/kivy/kivy/master/.github/workflows/buildozer_android.sh > build.sh
-        chmod +x build.sh
-        ./build.sh
+        sudo apt-get update
+        sudo apt-get install -y \
+          python3-pip \
+          python3-venv \
+          build-essential \
+          git \
+          zip \
+          unzip \
+          curl \
+          wget \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libtool \
+          autoconf \
+          automake
+    
+    - name: 安装Java
+      run: |
+        sudo apt-get install -y openjdk-17-jdk
+        echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+    
+    - name: 安装Python依赖
+      run: |
+        pip install --upgrade pip setuptools wheel
+        pip install cython==0.29.33
+        pip install buildozer==1.5.0
+    
+    - name: 设置Android环境
+      run: |
+        echo "设置Android环境..."
+        
+        # 创建目录
+        export ANDROID_HOME="$HOME/android-sdk"
+        mkdir -p $ANDROID_HOME
+        
+        # 下载命令行工具
+        cd /tmp
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -q commandlinetools-linux-9477386_latest.zip -d $ANDROID_HOME
+        
+        # 设置正确的目录结构
+        mkdir -p $ANDROID_HOME/cmdline-tools/latest
+        mv $ANDROID_HOME/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/ 2>/dev/null || true
+        
+        # 设置环境变量
+        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
+    
+    - name: 接受Android许可证并安装SDK
+      run: |
+        echo "接受Android许可证..."
+        
+        # 创建许可证文件
+        mkdir -p $ANDROID_HOME/licenses
+        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> $ANDROID_HOME/licenses/android-sdk-license
+        
+        # 接受所有许可证
+        yes | sdkmanager --licenses 2>/dev/null || true
+        
+        # 安装必要组件
+        sdkmanager "platforms;android-31"
+        sdkmanager "build-tools;30.0.3"
+        sdkmanager "platform-tools"
+        sdkmanager "cmdline-tools;latest"
+        
+        echo "验证aidl安装:"
+        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -3
+    
+    - name: 创建buildozer配置文件
+      run: |
+        echo "创建buildozer.spec..."
+        
+        # 如果不存在，初始化
+        if [ ! -f buildozer.spec ]; then
+          buildozer init
+        fi
+        
+        # 创建新的配置文件
+        cat > buildozer.spec << 'SPEC'
+[app]
+title = 我的APP
+package.name = myapp
+package.domain = com.example
+source.dir = .
+source.include_exts = py,png,jpg,kv
+version = 1.0
+requirements = python3,kivy
+
+orientation = portrait
+fullscreen = 0
+
+[buildozer]
+log_level = 2
+
+# 直接指定Android SDK路径
+[android]
+api = 31
+minapi = 21
+android.accept_sdk_license = true
+android.permissions = INTERNET
+android.sdk_path = $ANDROID_HOME
+android.ndk_path = /usr/local/lib/android/ndk  # 让buildozer自动下载
+android.build_tools_version = 30.0.3
+SPEC
+    
+    - name: 构建APK
+      timeout-minutes: 90
+      run: |
+        echo "开始构建APK..."
+        echo "Android SDK路径: $ANDROID_HOME"
+        echo "Java路径: $JAVA_HOME"
+        
+        # 显示环境变量
+        env | grep -i android
+        env | grep -i java
+        
+        # 构建APK
+        buildozer -v android debug 2>&1
+        
+        # 检查结果
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK构建成功！"
+          echo "生成的APK:"
+          ls -la bin/*.apk
+          echo "文件大小: $(du -h bin/*.apk | cut -f1)"
+        else
+          echo "❌ APK构建失败"
+          echo "查看最近的错误:"
+          find . -name "*.log" -type f 2>/dev/null | head -5 | xargs tail -50 2>/dev/null || true
+          exit 1
+        fi
     
     - name: 上传APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: apk
+        name: android-apk
         path: bin/*.apk
