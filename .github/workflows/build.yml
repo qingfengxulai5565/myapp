@@ -1,77 +1,25 @@
-name: 构建Android APK
+name: Build APK
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
-    
-    - name: 安装系统依赖
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          python3-pip \
-          python3-venv \
-          build-essential \
-          libffi-dev \
-          libssl-dev \
-          wget \
-          unzip \
-          openjdk-17-jdk
-    
-    - name: 设置Java环境
-      run: |
-        echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
-    
-    - name: 安装Buildozer
-      run: |
-        pip install --upgrade pip
+    - uses: actions/checkout@v4
+    - run: |
+        sudo apt update
+        sudo apt install -y python3-pip
         pip install buildozer
-        pip install cython==0.29.33
-    
-    - name: 设置Android许可证
-      run: |
+    - run: |
         mkdir -p ~/.android
         echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
-        echo "84831b9409646a918e30573b4d6a4b9d8b517c4a" >> ~/.android/android-sdk-license
-        echo "33b6a2b64607f17b47f689b6b6b184c620b6f6ea" >> ~/.android/android-sdk-license
-    
-    - name: 初始化Buildozer
-      run: |
-        if [ ! -f buildozer.spec ]; then
-          buildozer init
-        fi
-        
-        if ! grep -q "android.accept_sdk_license" buildozer.spec; then
-          echo -e "\nandroid.accept_sdk_license = true" >> buildozer.spec
-        fi
-    
-    - name: 构建APK
-      timeout-minutes: 60
-      run: |
-        echo "开始构建APK..."
-        buildozer -v android debug
-        
-        if ls bin/*.apk 1> /dev/null 2>&1; then
-          echo "✅ APK构建成功！"
-          ls -la bin/*.apk
-        else
-          echo "❌ APK构建失败"
-          exit 1
-        fi
-    
-    - name: 上传APK文件
+    - run: buildozer android debug
+    - uses: actions/upload-artifact@v4
       if: success()
-      uses: actions/upload-artifact@v4
       with:
-        name: 我的APP安装包
+        name: apk
         path: bin/*.apk
