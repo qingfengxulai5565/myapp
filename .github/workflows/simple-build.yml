@@ -1,0 +1,40 @@
+name: 简单构建
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: 使用Python打包
+      run: |
+        # 安装Python和依赖
+        pip install kivy buildozer
+        
+        # 创建测试APK
+        echo "创建一个简单的APK..."
+        
+        # 使用python-for-android直接构建
+        pip install python-for-android
+        
+        # 尝试直接构建
+        p4a apk --private $(pwd) \
+          --package=com.example.myapp \
+          --name="MyApp" \
+          --version=1.0 \
+          --requirements=python3,kivy \
+          --orientation=portrait
+        
+        # 如果成功，移动APK到bin目录
+        mkdir -p bin
+        mv *.apk bin/ 2>/dev/null || true
+    
+    - name: 上传结果
+      uses: actions/upload-artifact@v4
+      with:
+        name: apk-result
+        path: bin/*.apk
