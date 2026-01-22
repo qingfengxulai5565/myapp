@@ -12,7 +12,7 @@ jobs:
     - name: 检出代码
       uses: actions/checkout@v4
     
-    - name: 安装系统依赖
+    - name: 安装基础依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -21,8 +21,6 @@ jobs:
           build-essential \
           libffi-dev \
           libssl-dev \
-          wget \
-          unzip \
           openjdk-17-jdk
     
     - name: 安装Buildozer和Cython
@@ -31,11 +29,11 @@ jobs:
         pip install cython==0.29.33
         pip install buildozer==1.5.0
     
-    - name: 正确安装Android SDK
+    - name: 设置Android SDK环境
       run: |
-        echo "正确安装Android SDK..."
+        echo "设置Android SDK环境变量..."
         
-        # 创建Android SDK目录结构
+        # 创建Android SDK目录
         export ANDROID_HOME="$HOME/android-sdk"
         mkdir -p $ANDROID_HOME
         
@@ -50,69 +48,101 @@ jobs:
         
         # 设置环境变量
         echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
         echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
-        
-        # 显示目录结构
-        echo "Android SDK目录结构:"
-        find $ANDROID_HOME -type d | sort
     
-    - name: 安装Android组件
+    - name: 接受Android许可证并安装组件
       run: |
-        echo "安装Android组件..."
+        echo "接受Android许可证..."
         
-        # 接受所有许可证
-        yes | sdkmanager --licenses || true
+        # 创建许可证文件
+        mkdir -p $ANDROID_HOME/licenses
+        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> $ANDROID_HOME/licenses/android-sdk-license
         
         # 安装必要的组件
+        yes | sdkmanager --licenses 2>/dev/null || true
         sdkmanager "platforms;android-33"
         sdkmanager "build-tools;33.0.0"
         sdkmanager "platform-tools"
         sdkmanager "cmdline-tools;latest"
         
-        # 验证安装
-        echo "验证安装:"
-        ls -la $ANDROID_HOME/build-tools/33.0.0/
-        echo "aidl路径:"
-        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -1
+        echo "安装完成，验证aidl:"
+        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -5
     
-    - name: 设置Android许可证文件
+    - name: 准备Buildozer配置
       run: |
-        mkdir -p ~/.android
-        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
-    
-    - name: 修改buildozer.spec
-      run: |
-        echo "修改buildozer.spec..."
-        # 确保使用正确的build-tools版本
-        if ! grep -q "android.build_tools_version" buildozer.spec; then
-          echo -e "\nandroid.build_tools_version = 33.0.0" >> buildozer.spec
+        echo "准备Buildozer配置..."
+        
+        # 确保buildozer.spec存在
+        if [ ! -f buildozer.spec ]; then
+          buildozer init
         fi
         
-        # 确保接受许可证
-        sed -i 's/android.accept_sdk_license = .*/android.accept_sdk_license = true/g' buildozer.spec 2>/dev/null || true
-        if ! grep -q "android.accept_sdk_license" buildozer.spec; then
-          echo -e "\nandroid.accept_sdk_license = true" >> buildozer.spec
-        fi
+        # 设置正确的Android SDK路径
+        echo "设置Android SDK路径为: $ANDROID_HOME"
         
-        # 设置Android SDK路径
-        echo "android.sdk_path = $HOME/android-sdk" >> buildozer.spec
+        # 修改buildozer.spec
+        cat > buildozer.spec << 'SPEC'
+[app]
+title = 我的APP
+package.name = myapp
+package.domain = com.example
+source.dir = .
+source.include_exts = py,png,jpg,kv
+version = 1.0
+requirements = python3,kivy
+
+orientation = portrait
+fullscreen = 0
+
+[buildozer]
+log_level = 2
+
+# 这里是关键：直接告诉Buildozer使用我们设置的Android SDK
+[android]
+api = 33
+minapi = 21
+android.accept_sdk_license = true
+android.permissions = INTERNET
+android.sdk_path = $ANDROID_HOME
+android.ndk_path = $HOME/.buildozer/android/platform/android-ndk
+android.build_tools_version = 33.0.0
+SPEC
         
-        echo "修改后的buildozer.spec相关部分:"
-        grep -A2 -B2 "build_tools_version\|accept_sdk_license\|sdk_path" buildozer.spec || true
+        # 显示配置
+        echo "当前buildozer.spec内容:"
+        cat buildozer.spec
+    
+    - name: 设置Buildozer环境变量
+      run: |
+        echo "设置Buildozer环境变量..."
+        
+        # 告诉Buildozer使用我们的Android SDK
+        echo "ANDROIDSDK=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+        
+        # 创建符号链接，让Buildozer找到我们的SDK
+        mkdir -p ~/.buildozer/android/platform
+        ln -sf $ANDROID_HOME ~/.buildozer/android/platform/android-sdk 2>/dev/null || true
+        
+        echo "环境变量设置完成"
     
     - name: 构建APK
       timeout-minutes: 60
+      env:
+        ANDROIDSDK: ${{ env.ANDROID_HOME }}
+        ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
       run: |
         echo "开始构建APK..."
         echo "Android SDK路径: $ANDROID_HOME"
-        echo "PATH: $PATH"
+        echo "检查aidl:"
+        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -5
         
-        # 验证aidl可用
-        which aidl || find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -1
-        
-        # 构建
+        # 构建APK
         buildozer -v android debug
         
         if ls bin/*.apk 1> /dev/null 2>&1; then
@@ -120,11 +150,8 @@ jobs:
           ls -la bin/*.apk
         else
           echo "❌ APK构建失败"
-          echo "查看错误日志..."
-          find .buildozer -name "*.log" -type f 2>/dev/null | head -3 | while read log; do
-            echo "=== 日志文件: $log ==="
-            tail -100 "$log" 2>/dev/null || echo "无法读取日志"
-          done
+          echo "查看错误日志:"
+          find .buildozer -name "*.log" -type f 2>/dev/null | head -3 | xargs tail -100 2>/dev/null || true
           exit 1
         fi
     
