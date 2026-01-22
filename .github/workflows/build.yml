@@ -1,4 +1,4 @@
-name: Build APK
+name: 构建Android APK
 
 on:
   push:
@@ -9,17 +9,63 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    - run: |
-        sudo apt update
-        sudo apt install -y python3-pip
-        pip install buildozer
-    - run: |
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 安装系统依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          python3-pip \
+          python3-venv \
+          build-essential \
+          libffi-dev \
+          libssl-dev \
+          wget \
+          unzip \
+          openjdk-17-jdk
+    
+    - name: 安装Buildozer和Cython
+      run: |
+        pip install --upgrade pip
+        pip install cython==0.29.33
+        pip install buildozer==1.5.0
+    
+    - name: 设置Android许可证
+      run: |
         mkdir -p ~/.android
         echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
-    - run: buildozer android debug
-    - uses: actions/upload-artifact@v4
+        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
+    
+    - name: 检查Cython是否安装
+      run: |
+        echo "检查Cython..."
+        python -c "import cython; print('Cython版本:', cython.__version__)" || echo "Cython未安装"
+        which cython || echo "cython命令未找到"
+    
+    - name: 构建APK
+      timeout-minutes: 60
+      run: |
+        echo "开始构建APK..."
+        buildozer -v android debug
+        
+        if ls bin/*.apk 1> /dev/null 2>&1; then
+          echo "✅ APK构建成功！"
+          ls -la bin/*.apk
+        else
+          echo "❌ APK构建失败"
+          echo "尝试查看错误日志..."
+          find .buildozer -name "*.log" -type f 2>/dev/null | head -3 | while read log; do
+            echo "=== 日志文件: $log ==="
+            tail -50 "$log" 2>/dev/null || echo "无法读取日志"
+          done
+          exit 1
+        fi
+    
+    - name: 上传APK文件
       if: success()
+      uses: actions/upload-artifact@v4
       with:
-        name: apk
+        name: 我的APP安装包
         path: bin/*.apk
