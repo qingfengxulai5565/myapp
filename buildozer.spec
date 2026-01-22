@@ -1,6 +1,6 @@
 [app]
-title = 我的第一个APP
-package.name = myfirstapp
+title = 我的APP
+package.name = myapp
 package.domain = com.example
 source.dir = .
 source.include_exts = py,png,jpg,kv
@@ -14,10 +14,8 @@ fullscreen = 0
 log_level = 2
 
 [android]
-api = 31
+api = 33
 minapi = 21
 android.accept_sdk_license = true
 android.permissions = INTERNET
-
-# 指定使用较旧的build-tools版本，避免许可证问题
-android.build_tools_version = 33.0.0
+android.build_tools_version = 34.0.0

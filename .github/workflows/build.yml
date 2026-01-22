@@ -38,16 +38,48 @@ jobs:
         echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
         echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
     
-    - name: 检查Cython是否安装
+    - name: 手动安装Android SDK和Build-Tools
       run: |
-        echo "检查Cython..."
-        python -c "import cython; print('Cython版本:', cython.__version__)" || echo "Cython未安装"
-        which cython || echo "cython命令未找到"
+        echo "手动安装Android SDK和Build-Tools..."
+        
+        # 创建Android SDK目录
+        export ANDROID_HOME="$HOME/android-sdk"
+        mkdir -p $ANDROID_HOME
+        
+        # 下载命令行工具
+        cd $ANDROID_HOME
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip -q commandlinetools-linux-9477386_latest.zip
+        
+        # 设置路径
+        export PATH="$ANDROID_HOME/cmdline-tools/bin:$PATH"
+        
+        # 接受许可证
+        yes | sdkmanager --licenses
+        
+        # 安装平台和构建工具
+        sdkmanager "platforms;android-33"
+        sdkmanager "build-tools;33.0.0"
+        sdkmanager "platform-tools"
+        
+        # 验证安装
+        ls -la $ANDROID_HOME/build-tools/33.0.0/
+        echo "Aidl路径:"
+        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null || echo "未找到aidl"
     
     - name: 构建APK
       timeout-minutes: 60
       run: |
         echo "开始构建APK..."
+        
+        # 设置Android SDK路径
+        export ANDROID_SDK_ROOT="$HOME/android-sdk"
+        export PATH="$ANDROID_SDK_ROOT/build-tools/33.0.0:$PATH"
+        
+        # 检查aidl
+        which aidl || echo "aidl未在PATH中找到"
+        
+        # 构建
         buildozer -v android debug
         
         if ls bin/*.apk 1> /dev/null 2>&1; then
@@ -55,11 +87,6 @@ jobs:
           ls -la bin/*.apk
         else
           echo "❌ APK构建失败"
-          echo "尝试查看错误日志..."
-          find .buildozer -name "*.log" -type f 2>/dev/null | head -3 | while read log; do
-            echo "=== 日志文件: $log ==="
-            tail -50 "$log" 2>/dev/null || echo "无法读取日志"
-          done
           exit 1
         fi
     
