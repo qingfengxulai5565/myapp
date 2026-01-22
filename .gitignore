@@ -1,0 +1,12 @@
+# Python缓存文件
+__pycache__/
+*.pyc
+
+# Buildozer生成的文件
+.buildozer/
+bin/
+*.apk
+
+# 系统文件
+.DS_Store
+Thumbs.db
