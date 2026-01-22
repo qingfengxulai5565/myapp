@@ -9,155 +9,17 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: 安装基础依赖
+    - name: 使用预配置的构建脚本
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          python3-pip \
-          python3-venv \
-          build-essential \
-          libffi-dev \
-          libssl-dev \
-          openjdk-17-jdk
+        # 下载一个已经配置好的构建脚本
+        curl -s https://raw.githubusercontent.com/kivy/kivy/master/.github/workflows/buildozer_android.sh > build.sh
+        chmod +x build.sh
+        ./build.sh
     
-    - name: 安装Buildozer和Cython
-      run: |
-        pip install --upgrade pip
-        pip install cython==0.29.33
-        pip install buildozer==1.5.0
-    
-    - name: 设置Android SDK环境
-      run: |
-        echo "设置Android SDK环境变量..."
-        
-        # 创建Android SDK目录
-        export ANDROID_HOME="$HOME/android-sdk"
-        mkdir -p $ANDROID_HOME
-        
-        # 下载命令行工具
-        cd $ANDROID_HOME
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        unzip -q commandlinetools-linux-9477386_latest.zip
-        
-        # 创建正确的目录结构
-        mkdir -p cmdline-tools/latest
-        mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-        
-        # 设置环境变量
-        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-        echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
-    
-    - name: 接受Android许可证并安装组件
-      run: |
-        echo "接受Android许可证..."
-        
-        # 创建许可证文件
-        mkdir -p $ANDROID_HOME/licenses
-        echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > $ANDROID_HOME/licenses/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $ANDROID_HOME/licenses/android-sdk-license
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> $ANDROID_HOME/licenses/android-sdk-license
-        
-        # 安装必要的组件
-        yes | sdkmanager --licenses 2>/dev/null || true
-        sdkmanager "platforms;android-33"
-        sdkmanager "build-tools;33.0.0"
-        sdkmanager "platform-tools"
-        sdkmanager "cmdline-tools;latest"
-        
-        echo "安装完成，验证aidl:"
-        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -5
-    
-    - name: 准备Buildozer配置
-      run: |
-        echo "准备Buildozer配置..."
-        
-        # 确保buildozer.spec存在
-        if [ ! -f buildozer.spec ]; then
-          buildozer init
-        fi
-        
-        # 设置正确的Android SDK路径
-        echo "设置Android SDK路径为: $ANDROID_HOME"
-        
-        # 修改buildozer.spec
-        cat > buildozer.spec << 'SPEC'
-[app]
-title = 我的APP
-package.name = myapp
-package.domain = com.example
-source.dir = .
-source.include_exts = py,png,jpg,kv
-version = 1.0
-requirements = python3,kivy
-
-orientation = portrait
-fullscreen = 0
-
-[buildozer]
-log_level = 2
-
-# 这里是关键：直接告诉Buildozer使用我们设置的Android SDK
-[android]
-api = 33
-minapi = 21
-android.accept_sdk_license = true
-android.permissions = INTERNET
-android.sdk_path = $ANDROID_HOME
-android.ndk_path = $HOME/.buildozer/android/platform/android-ndk
-android.build_tools_version = 33.0.0
-SPEC
-        
-        # 显示配置
-        echo "当前buildozer.spec内容:"
-        cat buildozer.spec
-    
-    - name: 设置Buildozer环境变量
-      run: |
-        echo "设置Buildozer环境变量..."
-        
-        # 告诉Buildozer使用我们的Android SDK
-        echo "ANDROIDSDK=$ANDROID_HOME" >> $GITHUB_ENV
-        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-        echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-        
-        # 创建符号链接，让Buildozer找到我们的SDK
-        mkdir -p ~/.buildozer/android/platform
-        ln -sf $ANDROID_HOME ~/.buildozer/android/platform/android-sdk 2>/dev/null || true
-        
-        echo "环境变量设置完成"
-    
-    - name: 构建APK
-      timeout-minutes: 60
-      env:
-        ANDROIDSDK: ${{ env.ANDROID_HOME }}
-        ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
-      run: |
-        echo "开始构建APK..."
-        echo "Android SDK路径: $ANDROID_HOME"
-        echo "检查aidl:"
-        find $ANDROID_HOME -name "aidl" -type f 2>/dev/null | head -5
-        
-        # 构建APK
-        buildozer -v android debug
-        
-        if ls bin/*.apk 1> /dev/null 2>&1; then
-          echo "✅ APK构建成功！"
-          ls -la bin/*.apk
-        else
-          echo "❌ APK构建失败"
-          echo "查看错误日志:"
-          find .buildozer -name "*.log" -type f 2>/dev/null | head -3 | xargs tail -100 2>/dev/null || true
-          exit 1
-        fi
-    
-    - name: 上传APK文件
-      if: success()
+    - name: 上传APK
       uses: actions/upload-artifact@v4
       with:
-        name: 我的APP安装包
+        name: apk
         path: bin/*.apk

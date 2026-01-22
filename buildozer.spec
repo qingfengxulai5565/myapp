@@ -14,8 +14,7 @@ fullscreen = 0
 log_level = 2
 
 [android]
-api = 33
+api = 31
 minapi = 21
 android.accept_sdk_license = true
 android.permissions = INTERNET
-android.build_tools_version = 34.0.0
