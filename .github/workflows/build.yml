@@ -1,42 +1,39 @@
-name: 构建Android APK
+name: 构建APK
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:  # 只允许手动触发，避免每次push都构建
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: 设置Python环境
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-    
-    - name: 安装Buildozer
+    - name: 安装必要工具
       run: |
-        pip install buildozer cython
+        sudo apt update
+        sudo apt install -y python3-pip python3-venv
+        pip install buildozer
     
-    - name: 设置Android SDK许可证
+    - name: 构建
       run: |
+        # 设置许可证
         mkdir -p ~/.android
         echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
+        
+        # 构建
+        buildozer android debug
+        
+        # 如果失败，尝试旧版本
+        if [ ! -f bin/*.apk ]; then
+          echo "尝试旧版本配置..."
+          buildozer android debug deploy run 2>&1 | tail -100
+        fi
     
-    - name: 使用Buildozer Docker辅助
-      uses: mrokez/buildozer-action@v1.0.0
-      with:
-        buildozer-version: '1.5.0'
-        command: 'android debug'
-        extra-args: ''
-    
-    - name: 上传APK
+    - name: 上传结果
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: android-app
+        name: result
         path: bin/*.apk
