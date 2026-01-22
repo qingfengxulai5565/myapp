@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    # 步骤1: 获取代码
+    # 步骤1: 检出代码
     - name: 检出代码
       uses: actions/checkout@v4
     
@@ -19,73 +19,69 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y \
-          git \
-          zip \
-          unzip \
           python3-pip \
           python3-venv \
           build-essential \
           libffi-dev \
-          libssl-dev \
-          libltdl-dev \
-          curl \
-          wget
+          libssl-dev
     
-    # 步骤3: 安装Buildozer和依赖
+    # 步骤3: 安装Buildozer
     - name: 安装Buildozer
       run: |
         pip install --upgrade pip
-        pip install buildozer==1.5.0
+        pip install buildozer
         pip install cython==0.29.33
     
-    # 步骤4: 接受Android许可证
+    # 步骤4: 接受Android许可证（关键步骤）
     - name: 接受Android许可证
       run: |
         mkdir -p ~/.android
+        touch ~/.android/android-sdk-license
         echo "8933bad161af4178b1185d1a37fbf41ea5269c55" > ~/.android/android-sdk-license
         echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> ~/.android/android-sdk-license
-        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" >> ~/.android/android-sdk-license
     
-    # 步骤5: 初始化Buildozer
-    - name: 初始化Buildozer
+    # 步骤5: 显示当前目录文件
+    - name: 显示文件结构
       run: |
-        buildozer init
-        # 修改配置文件，确保接受SDK许可证
-        sed -i 's/android.accept_sdk_license = false/android.accept_sdk_license = true/g' buildozer.spec 2>/dev/null || true
+        echo "当前目录文件:"
+        ls -la
+        echo "buildozer.spec内容:"
+        cat buildozer.spec || echo "无法读取buildozer.spec"
     
     # 步骤6: 构建APK
     - name: 构建APK
-      timeout-minutes: 30
+      timeout-minutes: 45
       run: |
         echo "开始构建APK..."
+        
+        # 检查buildozer.spec是否存在
+        if [ ! -f buildozer.spec ]; then
+          echo "创建buildozer.spec..."
+          buildozer init
+        fi
+        
+        # 开始构建
         buildozer -v android debug
         
+        # 检查是否生成APK
         if ls bin/*.apk 1> /dev/null 2>&1; then
           echo "✅ APK构建成功！"
+          echo "APK文件:"
           ls -la bin/*.apk
-          echo "APK文件大小: $(du -h bin/*.apk | cut -f1)"
         else
           echo "❌ APK构建失败"
-          echo "检查错误日志..."
-          find . -name "*.log" -type f | head -5 | xargs cat
+          echo "检查日志..."
+          find .buildozer -name "*.log" -type f | head -3 | while read log; do
+            echo "=== 日志文件: $log ==="
+            tail -50 "$log"
+          done
           exit 1
         fi
     
-    # 步骤7: 上传APK文件（使用v4版本）
+    # 步骤7: 上传APK文件
     - name: 上传APK文件
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: 我的APP安装包
         path: bin/*.apk
-        retention-days: 7
-
-    # 步骤8: 上传构建日志（用于调试）
-    - name: 上传构建日志
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: 构建日志
-        path: |
-          .buildozer/**/*.log
-        retention-days: 3
